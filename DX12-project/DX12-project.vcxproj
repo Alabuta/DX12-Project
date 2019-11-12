@@ -150,9 +150,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\main.hxx" />
+    <ClInclude Include="src\platform\window.hxx" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cxx" />
+    <ClCompile Include="src\platform\window.cxx" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
