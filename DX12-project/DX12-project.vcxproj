@@ -151,6 +151,7 @@
   <ItemGroup>
     <ClInclude Include="src\main.hxx" />
     <ClInclude Include="src\platform\window.hxx" />
+    <ClInclude Include="src\utility\exception.hxx" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cxx" />
