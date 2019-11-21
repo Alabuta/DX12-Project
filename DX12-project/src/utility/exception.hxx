@@ -1,15 +1,7 @@
 #pragma once
 
 #include <exception>
-
 #include <string>
-using namespace std::string_literals;
-
-#include <wrl/client.h>
-#include <dxgi1_5.h>
-#include <d3d12.h>
-
-#include <fmt/format.h>
 
 
 namespace dx
@@ -20,6 +12,10 @@ namespace dx
 
     struct dxgi_factory : public std::exception {
         explicit dxgi_factory(std::string const &what_arg) : std::exception(what_arg.c_str()) { }
+    };
+
+    struct device_error : public std::exception {
+        explicit device_error(std::string const &what_arg) : std::exception(what_arg.c_str()) { }
     };
 }
 

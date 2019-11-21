@@ -21,8 +21,7 @@ using namespace std::string_view_literals;
 
 #include <fmt/format.h>
 
-#include <wrl/client.h>
 #include <dxgi1_5.h>
 #include <d3d12.h>
 
-namespace wrl = Microsoft::WRL;
+#include <winrt/Windows.Graphics.Display.h>

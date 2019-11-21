@@ -5,15 +5,15 @@
 #pragma comment(lib, "D3D12.lib")
 
 
-wrl::ComPtr<IDXGIAdapter1> pick_hardware_adapter(wrl::ComPtr<IDXGIFactory4> const &dxgi_factory)
+winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_factory)
 {
-    std::vector<wrl::ComPtr<IDXGIAdapter1>> adapters(16);
+    std::vector<winrt::com_ptr<IDXGIAdapter1>> adapters(16);
 
     std::generate(std::begin(adapters), std::end(adapters), [dxgi_factory, i = 0u] () mutable
     {
-        wrl::ComPtr<IDXGIAdapter1> adapter;
+        winrt::com_ptr<IDXGIAdapter1> adapter;
 
-        dxgi_factory->EnumAdapters1(i++, &adapter);
+        dxgi_factory->EnumAdapters1(i++, adapter.put());
 
         return adapter;
     });
@@ -37,7 +37,7 @@ wrl::ComPtr<IDXGIAdapter1> pick_hardware_adapter(wrl::ComPtr<IDXGIFactory4> cons
         if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
             return true;
 
-        if (auto result = D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr); FAILED(result))
+        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr); FAILED(result))
             return true;
 
         return description.DedicatedVideoMemory == 0;
@@ -71,33 +71,50 @@ int main()
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
     {
-        wrl::ComPtr<ID3D12Debug3> debug_controller;
+        winrt::com_ptr<ID3D12Debug3> debug_controller;
 
-        if (auto result = D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)); FAILED(result))
+        if (auto result = D3D12GetDebugInterface(__uuidof(ID3D12Debug3), debug_controller.put_void()); FAILED(result))
             throw dx::com_exception("failed get debug interface {0:#x}"s);
 
         debug_controller->EnableDebugLayer();
     }
 #endif
 
-    wrl::ComPtr<IDXGIFactory4> dxgi_factory;
+    winrt::com_ptr<IDXGIFactory4> dxgi_factory;
 
-    if (auto result = CreateDXGIFactory1(IID_PPV_ARGS(&dxgi_factory)); FAILED(result))
+    if (auto result = CreateDXGIFactory1(__uuidof(IDXGIFactory4), dxgi_factory.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create DXGI factory instance: {0:#x}"s, result));
 
-    auto hardware_adapter = pick_hardware_adapter(dxgi_factory);
+    auto hardware_adapter = pick_hardware_adapter(dxgi_factory.get());
 
     if (hardware_adapter == nullptr)
         throw dx::dxgi_factory("failed to pick hardware adapter"s);
 
-    wrl::ComPtr<ID3D12Device1> device;
+    winrt::com_ptr<ID3D12Device1> device;
 
-    if (auto result = D3D12CreateDevice(hardware_adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)); FAILED(result))
+    if (auto result = D3D12CreateDevice(hardware_adapter.get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device1), device.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
 
-    /*hardware_adapter->Release();
+    {
+        auto const requested_feature_levels = std::array{
+            D3D_FEATURE_LEVEL_12_1,
+            D3D_FEATURE_LEVEL_12_0,
+            D3D_FEATURE_LEVEL_11_1,
+            D3D_FEATURE_LEVEL_11_0
+        };
 
-    dxgi_factory->Release();*/
+        D3D12_FEATURE_DATA_FEATURE_LEVELS feature_levels{
+            static_cast<UINT>(std::size(requested_feature_levels)), std::data(requested_feature_levels)
+        };
+
+        if (auto result = device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &feature_levels, sizeof(feature_levels)); FAILED(result))
+            throw dx::device_error(fmt::format("failed to check device feature support: {0:#x}"s, result));
+    }
+
+    device = nullptr;
+    hardware_adapter = nullptr;
+
+    dxgi_factory = nullptr;
 
     std::cin.get();
 }
