@@ -65,6 +65,32 @@ winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_fa
     return adapters.empty() ? nullptr : adapters.front();
 }
 
+winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapter)
+{
+    winrt::com_ptr<ID3D12Device1> device;
+
+    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device1), device.put_void()); FAILED(result))
+        throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
+
+    {
+        auto const requested_feature_levels = std::array{
+            D3D_FEATURE_LEVEL_12_1,
+            D3D_FEATURE_LEVEL_12_0,
+            D3D_FEATURE_LEVEL_11_1,
+            D3D_FEATURE_LEVEL_11_0
+        };
+
+        D3D12_FEATURE_DATA_FEATURE_LEVELS feature_levels{
+            static_cast<UINT>(std::size(requested_feature_levels)), std::data(requested_feature_levels)
+        };
+
+        if (auto result = device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &feature_levels, sizeof(feature_levels)); FAILED(result))
+            throw dx::device_error(fmt::format("failed to check device D3D12 feature support: {0:#x}"s, result));
+    }
+
+    return device;
+}
+
 int main()
 {
 #if defined(_DEBUG) || defined(DEBUG)
@@ -90,26 +116,41 @@ int main()
     if (hardware_adapter == nullptr)
         throw dx::dxgi_factory("failed to pick hardware adapter"s);
 
-    winrt::com_ptr<ID3D12Device1> device;
+    auto device = create_device(hardware_adapter.get());
 
-    if (auto result = D3D12CreateDevice(hardware_adapter.get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device1), device.put_void()); FAILED(result))
-        throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
+    if (device == nullptr)
+        throw dx::dxgi_factory("failed to create device"s);
+
+    winrt::com_ptr<ID3D12Fence> fence;
+
+    if (auto result = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence), fence.put_void()); FAILED(result))
+        throw dx::device_error(fmt::format("failed to create a fence: {0:#x}"s, result));
+
+    auto const RTV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    auto const DSV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    auto const CBV_SRV_UAV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    auto constexpr back_buffer_format = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
 
     {
-        auto const requested_feature_levels = std::array{
-            D3D_FEATURE_LEVEL_12_1,
-            D3D_FEATURE_LEVEL_12_0,
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0
+        D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msaa_levels{
+            back_buffer_format,
+            4,
+            D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE,
+            0
         };
 
-        D3D12_FEATURE_DATA_FEATURE_LEVELS feature_levels{
-            static_cast<UINT>(std::size(requested_feature_levels)), std::data(requested_feature_levels)
-        };
+        auto constexpr feature = D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS;
 
-        if (auto result = device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &feature_levels, sizeof(feature_levels)); FAILED(result))
-            throw dx::device_error(fmt::format("failed to check device feature support: {0:#x}"s, result));
+        if (auto result = device->CheckFeatureSupport(feature, &msaa_levels, sizeof(msaa_levels)); FAILED(result))
+            throw dx::device_error(fmt::format("failed to check MSAA quality feature support: {0:#x}"s, result));
+
+        if (msaa_levels.NumQualityLevels < 4)
+            throw dx::device_error("low tier device"s);
     }
+
+
+    fence = nullptr;
 
     device = nullptr;
     hardware_adapter = nullptr;
