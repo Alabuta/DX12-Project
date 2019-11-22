@@ -62,7 +62,10 @@ winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_fa
         return lhs_description.SharedSystemMemory > rhs_description.SharedSystemMemory;
     });
 
-    return adapters.empty() ? nullptr : adapters.front();
+    if (adapters.empty())
+        throw dx::dxgi_factory("failed to pick hardware adapter"s);
+
+    return adapters.front();
 }
 
 winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapter)
@@ -91,6 +94,43 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapte
     return device;
 }
 
+winrt::com_ptr<ID3D12CommandQueue> create_command_queue(ID3D12Device1 *const device, D3D12_COMMAND_LIST_TYPE type)
+{
+    D3D12_COMMAND_QUEUE_DESC const description{
+        type,
+        D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
+        D3D12_COMMAND_QUEUE_FLAG_NONE,
+        0
+    };
+
+    winrt::com_ptr<ID3D12CommandQueue> queue;
+
+    if (auto result = device->CreateCommandQueue(&description, __uuidof(queue), queue.put_void()); FAILED(result))
+        throw dx::device_error(fmt::format("failed to create a command queue: {0:#x}"s, result));
+
+    return queue;
+}
+
+winrt::com_ptr<ID3D12CommandAllocator> create_command_allocator(ID3D12Device1 *const device, D3D12_COMMAND_LIST_TYPE type)
+{
+    winrt::com_ptr<ID3D12CommandAllocator> allocator;
+
+    if (auto result = device->CreateCommandAllocator(type, __uuidof(allocator), allocator.put_void()); FAILED(result))
+        throw dx::device_error(fmt::format("failed to create a command allocator: {0:#x}"s, result));
+
+    return allocator;
+}
+
+winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *const device, ID3D12CommandAllocator *const allocator, D3D12_COMMAND_LIST_TYPE type)
+{
+    winrt::com_ptr<ID3D12GraphicsCommandList1> list;
+
+    if (auto result = device->CreateCommandList(0, type, allocator, nullptr, __uuidof(list), list.put_void()); FAILED(result))
+        throw dx::device_error(fmt::format("failed to create a command list: {0:#x}"s, result));
+
+    return list;
+}
+
 int main()
 {
 #if defined(_DEBUG) || defined(DEBUG)
@@ -113,13 +153,7 @@ int main()
 
     auto hardware_adapter = pick_hardware_adapter(dxgi_factory.get());
 
-    if (hardware_adapter == nullptr)
-        throw dx::dxgi_factory("failed to pick hardware adapter"s);
-
     auto device = create_device(hardware_adapter.get());
-
-    if (device == nullptr)
-        throw dx::dxgi_factory("failed to create device"s);
 
     winrt::com_ptr<ID3D12Fence> fence;
 
@@ -140,15 +174,26 @@ int main()
             0
         };
 
-        auto constexpr feature = D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS;
+        auto constexpr feature = D3D12_FEATURE::D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS;
 
         if (auto result = device->CheckFeatureSupport(feature, &msaa_levels, sizeof(msaa_levels)); FAILED(result))
             throw dx::device_error(fmt::format("failed to check MSAA quality feature support: {0:#x}"s, result));
 
         if (msaa_levels.NumQualityLevels < 4)
-            throw dx::device_error("low tier device"s);
+            throw dx::device_error("MSAA quality level lower than required level"s);
     }
 
+    auto command_queue = create_command_queue(device.get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto command_allocator = create_command_allocator(device.get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto command_list = create_command_list(device.get(), command_allocator.get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
+
+    command_list->Close();
+
+    ;
+
+    command_list = nullptr;
+    command_allocator = nullptr;
+    command_queue = nullptr;
 
     fence = nullptr;
 
