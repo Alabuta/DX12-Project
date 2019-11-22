@@ -5,6 +5,14 @@
 #pragma comment(lib, "D3D12.lib")
 
 
+namespace graphics
+{
+    struct extent final {
+        std::uint32_t width{0}, height{0};
+    };
+}
+
+
 winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_factory)
 {
     std::vector<winrt::com_ptr<IDXGIAdapter1>> adapters(16);
@@ -129,6 +137,35 @@ winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *co
         throw dx::device_error(fmt::format("failed to create a command list: {0:#x}"s, result));
 
     return list;
+}
+
+winrt::com_ptr<int> create_swapchain(graphics::extent extent, DXGI_FORMAT format)
+{
+    auto [width, height] = extent;
+
+    DXGI_MODE_DESC1 const display_mode_description{
+        width, height,
+        DXGI_RATIONAL{60, 1},
+        format,
+        DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+        DXGI_MODE_SCALING_UNSPECIFIED
+    };
+
+    DXGI_SWAP_CHAIN_DESC const description{
+        width, height,
+        format,
+        FALSE,
+        DXGI_SAMPLE_DESC{4, 4},
+
+    };
+
+    /*DXGI_SWAP_CHAIN_DESC1 const description{
+        width, height,
+        format,
+        FALSE,
+        DXGI_SAMPLE_DESC{4, 4},
+
+    };*/
 }
 
 int main()
