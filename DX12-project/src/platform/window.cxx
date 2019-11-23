@@ -6,26 +6,14 @@ using namespace std::string_literals;
 
 #include "window.hxx"
 
-
-namespace
-{
-    auto constexpr kCLASS_NAME = L"vulkan-island-window-class";
-
-    LRESULT CALLBACK static_callback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-    {
-        /*if (auto window = windowsTable[hWnd]; window)
-            return window->Process(hWnd, msg, wParam, lParam);
-
-        else */return DefWindowProcW(hWnd, msg, wParam, lParam);
-    }
-}
-
 namespace platform
 {
     window::window(std::wstring_view name, std::int32_t width, std::int32_t height)
         : handle_{nullptr}, width_{width}, height_{height}, name_{name}
     {
         auto hInstance = GetModuleHandleW(nullptr);
+
+        auto class_name = L"CLASS_NAME_"s + std::wstring{name};
 
         WNDCLASSEXW const window_class{
             sizeof(WNDCLASSEXW),
@@ -36,7 +24,7 @@ namespace platform
             nullptr,
             LoadCursorW(hInstance, IDC_ARROW),
             CreateSolidBrush(RGB(41, 34, 37)), nullptr,
-            kCLASS_NAME,
+            class_name.c_str(),
             nullptr
         };
 
@@ -44,12 +32,10 @@ namespace platform
             throw std::runtime_error("failed to register window class"s);
 
         handle_ = CreateWindowExW(0, window_class.lpszClassName, name_.c_str(), WS_POPUP | WS_SYSMENU,
-                                  0, 0, width, height, nullptr, nullptr, hInstance, nullptr);
+                                  0, 0, width, height, nullptr, nullptr, hInstance, reinterpret_cast<LPVOID>(this));
 
         if (handle_ == nullptr)
             throw std::runtime_error("failed to create window"s);
-
-        set_callbacks();
 
         SetWindowLongPtrW(handle_, GWL_EXSTYLE, WS_EX_WINDOWEDGE);
         SetWindowLongPtrW(handle_, GWL_STYLE, WS_TILEDWINDOW /*^ (WS_THICKFRAME | WS_CAPTION)*/);
@@ -83,10 +69,54 @@ namespace platform
         if (handle_) {
             DestroyWindow(handle_);
 
-            UnregisterClassW(kCLASS_NAME, GetModuleHandleW(nullptr));
+            UnregisterClassW((L"CLASS_NAME_"s + name_).c_str(), GetModuleHandleW(nullptr));
 
             handle_ = nullptr;
         }
+    }
+
+    LRESULT CALLBACK window::static_callback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        switch (msg) {
+            case WM_NCCREATE:
+                auto create_info = reinterpret_cast<LPCREATESTRUCT>(lParam);
+                auto instance = reinterpret_cast<window *>(create_info->lpCreateParams);
+
+                window_tables_.insert_or_assign(hWnd, instance);
+                return TRUE;
+        }
+
+        if (auto window = window_tables_[hWnd]; window)
+            return window->process(hWnd, msg, wParam, lParam);
+
+        else return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+
+    LRESULT CALLBACK window::process(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        switch (msg) {
+            case WM_ERASEBKGND:
+                return 1L;
+
+            /*case WM_NCPAINT:
+                if (!IsWindowed())
+                    return 0L;
+                break;*/
+
+            case WM_SIZE:
+                resize_callback_(LOWORD(lParam), HIWORD(lParam));
+                return 0L;
+
+            /*case WM_CLOSE:
+                Window::Destroy();
+                return 0L;*/
+
+            case WM_DESTROY:
+                PostQuitMessage(0);
+                return 0L;
+        }
+
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
 
     void window::connect_event_handler(std::shared_ptr<event_handler_interface> handler)
@@ -101,20 +131,24 @@ namespace platform
         /*while (glfwWindowShouldClose(handle_) == GLFW_FALSE && glfwGetKey(handle_, GLFW_KEY_ESCAPE) != GLFW_PRESS) {
             callback();
         }*/
-    }
+        MSG msg;
 
-    void window::set_callbacks()
-    {
-        /*glfwSetWindowSizeCallback(handle_, [] (auto handle, auto width, auto height)
-        {
-            auto instance = reinterpret_cast<window *>(glfwGetWindowUserPointer(handle));
+    #pragma warning(push, 3)
+    #pragma warning(disable: 4127)
+        while (true) {
+    #pragma warning(pop)
+            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE /*| PM_NOYIELD*/) != 0) {
+                if (msg.message == WM_QUIT)
+                    return;// static_cast<std::int32_t>(msg.wParam);
 
-            if (instance) {
-                instance->width_ = width;
-                instance->height_ = height;
-
-                instance->resize_callback_(width, height);
+                //TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
-        });*/
+
+            //if (Window::main().InFocus())
+                callback();
+
+            //else WaitMessage();
+        }
     }
 }

@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include <boost/signals2.hpp>
 
@@ -22,7 +23,7 @@ namespace platform
 
         ~window();
 
-        HWND handle() noexcept { return handle_; }
+        HWND handle() const noexcept { return handle_; }
 
         struct event_handler_interface {
             virtual ~event_handler_interface() = default;
@@ -35,6 +36,7 @@ namespace platform
         void update(std::function<void()> &&callback);
 
     private:
+
         HWND handle_;
 
         std::int32_t width_{0}, height_{0};
@@ -43,6 +45,10 @@ namespace platform
 
         boost::signals2::signal<void(std::int32_t, std::int32_t)> resize_callback_;
 
-        void set_callbacks();
+        LRESULT CALLBACK process(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+        inline static std::unordered_map<HWND, window *> window_tables_;
+
+        static LRESULT CALLBACK static_callback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     };
 }
