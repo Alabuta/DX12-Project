@@ -1,5 +1,6 @@
 #include "main.hxx"
 #include "utility/exception.hxx"
+#include "platform/window.hxx"
 
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -139,11 +140,12 @@ winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *co
     return list;
 }
 
-winrt::com_ptr<int> create_swapchain(graphics::extent extent, DXGI_FORMAT format)
+winrt::com_ptr<IDXGISwapChain>
+create_swapchain(IDXGIFactory4 *const factory, ID3D12Device1 *const device, platform::window const &window, graphics::extent extent, DXGI_FORMAT format)
 {
     auto [width, height] = extent;
 
-    DXGI_MODE_DESC1 const display_mode_description{
+    DXGI_MODE_DESC const display_mode_description{
         width, height,
         DXGI_RATIONAL{60, 1},
         format,
@@ -151,21 +153,23 @@ winrt::com_ptr<int> create_swapchain(graphics::extent extent, DXGI_FORMAT format
         DXGI_MODE_SCALING_UNSPECIFIED
     };
 
-    DXGI_SWAP_CHAIN_DESC const description{
-        width, height,
-        format,
-        FALSE,
+    DXGI_SWAP_CHAIN_DESC description{
+        display_mode_description,
         DXGI_SAMPLE_DESC{4, 4},
-
+        DXGI_USAGE_RENDER_TARGET_OUTPUT,
+        3,
+        window.handle(),
+        TRUE,
+        DXGI_SWAP_EFFECT_FLIP_DISCARD,
+        0
     };
 
-    /*DXGI_SWAP_CHAIN_DESC1 const description{
-        width, height,
-        format,
-        FALSE,
-        DXGI_SAMPLE_DESC{4, 4},
+    winrt::com_ptr<IDXGISwapChain> swap_chain;
 
-    };*/
+    if (auto result = factory->CreateSwapChain(device, &description, swap_chain.put()); FAILED(result))
+        throw dx::dxgi_factory(fmt::format("failed to create a swap chain: {0:#x}"s, result));
+
+    return swap_chain;
 }
 
 int main()
@@ -226,7 +230,14 @@ int main()
 
     command_list->Close();
 
-    ;
+    graphics::extent extent{800, 600};
+
+    platform::window window{L"DX12 Project"s, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
+
+    window.update([]
+    {
+        ;
+    });
 
     command_list = nullptr;
     command_allocator = nullptr;
