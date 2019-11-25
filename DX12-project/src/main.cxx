@@ -81,7 +81,7 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapte
 {
     winrt::com_ptr<ID3D12Device1> device;
 
-    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device1), device.put_void()); FAILED(result))
+    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_11_0, __uuidof(device), device.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
 
     {
@@ -141,7 +141,7 @@ winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *co
 }
 
 winrt::com_ptr<IDXGISwapChain>
-create_swapchain(IDXGIFactory4 *const factory, ID3D12Device1 *const device, platform::window const &window, graphics::extent extent, DXGI_FORMAT format)
+create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, platform::window const &window, graphics::extent extent, DXGI_FORMAT format)
 {
     auto [width, height] = extent;
 
@@ -155,18 +155,18 @@ create_swapchain(IDXGIFactory4 *const factory, ID3D12Device1 *const device, plat
 
     DXGI_SWAP_CHAIN_DESC description{
         display_mode_description,
-        DXGI_SAMPLE_DESC{4, 4},
+        DXGI_SAMPLE_DESC{1, 0},
         DXGI_USAGE_RENDER_TARGET_OUTPUT,
         3,
         window.handle(),
         TRUE,
         DXGI_SWAP_EFFECT_FLIP_DISCARD,
-        0
+        DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH
     };
 
     winrt::com_ptr<IDXGISwapChain> swap_chain;
 
-    if (auto result = factory->CreateSwapChain(device, &description, swap_chain.put()); FAILED(result))
+    if (auto result = factory->CreateSwapChain(queue, &description, swap_chain.put()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create a swap chain: {0:#x}"s, result));
 
     return swap_chain;
@@ -183,7 +183,7 @@ int main()
     {
         winrt::com_ptr<ID3D12Debug3> debug_controller;
 
-        if (auto result = D3D12GetDebugInterface(__uuidof(ID3D12Debug3), debug_controller.put_void()); FAILED(result))
+        if (auto result = D3D12GetDebugInterface(__uuidof(debug_controller), debug_controller.put_void()); FAILED(result))
             throw dx::com_exception("failed get debug interface {0:#x}"s);
 
         debug_controller->EnableDebugLayer();
@@ -192,7 +192,7 @@ int main()
 
     winrt::com_ptr<IDXGIFactory4> dxgi_factory;
 
-    if (auto result = CreateDXGIFactory1(__uuidof(IDXGIFactory4), dxgi_factory.put_void()); FAILED(result))
+    if (auto result = CreateDXGIFactory1(__uuidof(dxgi_factory), dxgi_factory.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create DXGI factory instance: {0:#x}"s, result));
 
     auto hardware_adapter = pick_hardware_adapter(dxgi_factory.get());
@@ -201,14 +201,14 @@ int main()
 
     winrt::com_ptr<ID3D12Fence> fence;
 
-    if (auto result = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence), fence.put_void()); FAILED(result))
+    if (auto result = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(fence), fence.put_void()); FAILED(result))
         throw dx::device_error(fmt::format("failed to create a fence: {0:#x}"s, result));
 
     auto const RTV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     auto const DSV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
     auto const CBV_SRV_UAV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    auto constexpr back_buffer_format = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    auto constexpr back_buffer_format = DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM;
 
     {
         D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msaa_levels{
@@ -237,10 +237,14 @@ int main()
 
     platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
 
+    auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format);
+
     window.update([]
     {
         ;
     });
+
+    swapchain = nullptr;
 
     command_list = nullptr;
     command_allocator = nullptr;
