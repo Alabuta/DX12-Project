@@ -141,7 +141,8 @@ winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *co
 }
 
 winrt::com_ptr<IDXGISwapChain>
-create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, platform::window const &window, graphics::extent extent, DXGI_FORMAT format)
+create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, platform::window const &window,
+                 graphics::extent extent, DXGI_FORMAT format, std::uint32_t swapchain_buffer_count)
 {
     auto [width, height] = extent;
 
@@ -157,7 +158,7 @@ create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, 
         display_mode_description,
         DXGI_SAMPLE_DESC{1, 0},
         DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        3,
+        swapchain_buffer_count,
         window.handle(),
         TRUE,
         DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -172,10 +173,45 @@ create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, 
     return swap_chain;
 }
 
+winrt::com_ptr<ID3D12DescriptorHeap>
+create_descriptor_heaps(ID3D12Device1 *const device, std::uint32_t number)
+{
+    D3D12_DESCRIPTOR_HEAP_DESC description{
+        D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+        number,
+        D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        0
+    };
+
+    winrt::com_ptr<ID3D12DescriptorHeap> heap;
+
+    if (auto result = device->CreateDescriptorHeap(&description, __uuidof(heap), heap.put_void()); FAILED(result))
+        throw dx::dxgi_factory(fmt::format("failed to create a descriptor heap(s): {0:#x}"s, result));
+
+    return heap;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE
+current_back_buffer_view(ID3D12DescriptorHeap *const back_buffer, std::uint32_t current_back_buffer_index, std::uint32_t descriptor_byte_size)
+{
+    auto handle_start = back_buffer->GetCPUDescriptorHandleForHeapStart();
+
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE{handle_start, static_cast<std::int32_t>(current_back_buffer_index), descriptor_byte_size};
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE
+depth_stencil_buffer_view(ID3D12DescriptorHeap *const depth_stencil_buffer)
+{
+    return depth_stencil_buffer->GetCPUDescriptorHandleForHeapStart();
+}
+
+
 int main()
 {
     if (auto result = glfwInit(); result != GLFW_TRUE)
         throw std::runtime_error(fmt::format("failed to init GLFW: {0:#x}\n"s, result));
+
+    graphics::extent extent{800, 600};
 
 #if defined(_DEBUG) || defined(DEBUG)
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -233,16 +269,22 @@ int main()
 
     command_list->Close();
 
-    graphics::extent extent{800, 600};
-
     platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
 
-    auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format);
+    auto constexpr swapchain_buffer_count = 3u;
+
+    auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format, swapchain_buffer_count);
+
+    auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), swapchain_buffer_count);
+    auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), 1);
 
     window.update([]
     {
         ;
     });
+
+    dsv_descriptor_heap = nullptr;
+    rtv_descriptor_heaps = nullptr;
 
     swapchain = nullptr;
 
