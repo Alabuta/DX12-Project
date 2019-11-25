@@ -23,5 +23,6 @@ using namespace std::string_view_literals;
 
 #include <dxgi1_5.h>
 #include <d3d12.h>
+#include <DX12/d3dx12.h>
 
 #include <winrt/Windows.Graphics.Display.h>
