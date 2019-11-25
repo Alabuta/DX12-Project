@@ -174,6 +174,9 @@ create_swapchain(IDXGIFactory4 *const factory, ID3D12Device1 *const device, plat
 
 int main()
 {
+    if (auto result = glfwInit(); result != GLFW_TRUE)
+        throw std::runtime_error(fmt::format("failed to init GLFW: {0:#x}\n"s, result));
+
 #if defined(_DEBUG) || defined(DEBUG)
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
@@ -232,7 +235,7 @@ int main()
 
     graphics::extent extent{800, 600};
 
-    platform::window window{L"DX12 Project"s, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
+    platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
 
     window.update([]
     {
@@ -250,5 +253,5 @@ int main()
 
     dxgi_factory = nullptr;
 
-    std::cin.get();
+    glfwTerminate();
 }

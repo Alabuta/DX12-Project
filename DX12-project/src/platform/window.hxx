@@ -4,14 +4,12 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 #include <boost/signals2.hpp>
 
-#ifndef WIN32_LEAN_AND_MEAN
-    #define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 
 namespace platform
@@ -19,11 +17,13 @@ namespace platform
     class window final {
     public:
 
-        window(std::wstring_view name, std::int32_t width, std::int32_t height);
+        window(std::string_view name, std::int32_t width, std::int32_t height);
 
         ~window();
 
-        HWND handle() const noexcept { return handle_; }
+        void update(std::function<void()> &&callback);
+
+        HWND handle() const noexcept { return glfwGetWin32Window(handle_); }
 
         struct event_handler_interface {
             virtual ~event_handler_interface() = default;
@@ -33,22 +33,16 @@ namespace platform
 
         void connect_event_handler(std::shared_ptr<event_handler_interface> handler);
 
-        void update(std::function<void()> &&callback);
-
     private:
 
-        HWND handle_;
+        GLFWwindow *handle_;
 
         std::int32_t width_{0}, height_{0};
 
-        std::wstring name_;
+        std::string name_;
 
         boost::signals2::signal<void(std::int32_t, std::int32_t)> resize_callback_;
 
-        LRESULT CALLBACK process(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-        inline static std::unordered_map<HWND, window *> window_tables_;
-
-        static LRESULT CALLBACK static_callback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+        void set_callbacks();
     };
 }
