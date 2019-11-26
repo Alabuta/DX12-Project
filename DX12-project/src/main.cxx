@@ -205,6 +205,31 @@ depth_stencil_buffer_view(ID3D12DescriptorHeap *const depth_stencil_buffer)
     return depth_stencil_buffer->GetCPUDescriptorHandleForHeapStart();
 }
 
+std::vector<winrt::com_ptr<ID3D12Resource>>
+create_swapchain_rtvs(ID3D12Device1 *const device, IDXGISwapChain *const swapchain, std::uint32_t swapchain_buffer_count,
+                      ID3D12DescriptorHeap *const rtv_descriptor_heap, std::uint32_t descriptor_byte_size)
+{
+    std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffer(swapchain_buffer_count);
+
+    auto rtv_heap_handle = static_cast<CD3DX12_CPU_DESCRIPTOR_HANDLE>(rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
+
+    std::generate(std::begin(swapchain_buffer), std::end(swapchain_buffer), [&, i = 0u] () mutable
+    {
+        winrt::com_ptr<ID3D12Resource> buffer;
+
+        if (auto result = swapchain->GetBuffer(i++, __uuidof(buffer), buffer.put_void()); FAILED(result))
+            throw dx::swapchain(fmt::format("failed to get swapchain buffer: {0:#x}"s, result));
+
+        device->CreateRenderTargetView(buffer.get(), nullptr, rtv_heap_handle);
+
+        rtv_heap_handle.Offset(1, descriptor_byte_size);
+        
+        return buffer;
+    });
+
+    return swapchain_buffer;
+}
+
 
 int main()
 {
