@@ -230,6 +230,48 @@ create_swapchain_rtvs(ID3D12Device1 *const device, IDXGISwapChain *const swapcha
     return swapchain_buffer;
 }
 
+winrt::com_ptr<ID3D12Resource>
+create_depth_stencil_buffer(ID3D12Device1 *const device, graphics::extent extent, DXGI_FORMAT format)
+{
+    auto [width, height] = extent;
+
+    D3D12_RESOURCE_DESC const description{
+        D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        0,
+        width, height,
+        1,
+        1,
+        format,
+        DXGI_SAMPLE_DESC{1, 0},
+        D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+    };
+
+    D3D12_HEAP_PROPERTIES const heap_properties{
+        D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE,
+        D3D12_MEMORY_POOL_L1,
+        1,
+        1
+    };
+
+    auto constexpr initial_state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE const clear_value{
+        .Format = format,
+        .DepthStencil = D3D12_DEPTH_STENCIL_VALUE{ 1.f, 0 }
+    };
+
+    winrt::com_ptr<ID3D12Resource> buffer;
+
+    if (auto result = device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &description,
+                                                      initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
+        throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
+
+    return buffer;
+}
+
+
 
 int main()
 {
