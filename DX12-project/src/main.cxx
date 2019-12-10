@@ -326,7 +326,7 @@ int main()
         if (auto result = device->CheckFeatureSupport(feature, &msaa_levels, sizeof(msaa_levels)); FAILED(result))
             throw dx::device_error(fmt::format("failed to check MSAA quality feature support: {0:#x}"s, result));
 
-        if (msaa_levels.NumQualityLevels < 4)
+        if (msaa_levels.NumQualityLevels < 1)
             throw dx::device_error("MSAA quality level lower than required level"s);
     }
 
