@@ -2,6 +2,9 @@
 #include "utility/exception.hxx"
 #include "platform/window.hxx"
 
+#include "graphics/command.hxx"
+#include "graphics/descriptor.hxx"
+
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "D3D12.lib")
 
@@ -103,43 +106,6 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapte
     return device;
 }
 
-winrt::com_ptr<ID3D12CommandQueue> create_command_queue(ID3D12Device1 *const device, D3D12_COMMAND_LIST_TYPE type)
-{
-    D3D12_COMMAND_QUEUE_DESC const description{
-        type,
-        D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
-        D3D12_COMMAND_QUEUE_FLAG_NONE,
-        0
-    };
-
-    winrt::com_ptr<ID3D12CommandQueue> queue;
-
-    if (auto result = device->CreateCommandQueue(&description, __uuidof(queue), queue.put_void()); FAILED(result))
-        throw dx::device_error(fmt::format("failed to create a command queue: {0:#x}"s, result));
-
-    return queue;
-}
-
-winrt::com_ptr<ID3D12CommandAllocator> create_command_allocator(ID3D12Device1 *const device, D3D12_COMMAND_LIST_TYPE type)
-{
-    winrt::com_ptr<ID3D12CommandAllocator> allocator;
-
-    if (auto result = device->CreateCommandAllocator(type, __uuidof(allocator), allocator.put_void()); FAILED(result))
-        throw dx::device_error(fmt::format("failed to create a command allocator: {0:#x}"s, result));
-
-    return allocator;
-}
-
-winrt::com_ptr<ID3D12GraphicsCommandList1> create_command_list(ID3D12Device1 *const device, ID3D12CommandAllocator *const allocator, D3D12_COMMAND_LIST_TYPE type)
-{
-    winrt::com_ptr<ID3D12GraphicsCommandList1> list;
-
-    if (auto result = device->CreateCommandList(0, type, allocator, nullptr, __uuidof(list), list.put_void()); FAILED(result))
-        throw dx::device_error(fmt::format("failed to create a command list: {0:#x}"s, result));
-
-    return list;
-}
-
 winrt::com_ptr<IDXGISwapChain>
 create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, platform::window const &window,
                  graphics::extent extent, DXGI_FORMAT format, std::uint32_t swapchain_buffer_count)
@@ -171,24 +137,6 @@ create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, 
         throw dx::dxgi_factory(fmt::format("failed to create a swap chain: {0:#x}"s, result));
 
     return swap_chain;
-}
-
-winrt::com_ptr<ID3D12DescriptorHeap>
-create_descriptor_heaps(ID3D12Device1 *const device, std::uint32_t number)
-{
-    D3D12_DESCRIPTOR_HEAP_DESC description{
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-        number,
-        D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-        0
-    };
-
-    winrt::com_ptr<ID3D12DescriptorHeap> heap;
-
-    if (auto result = device->CreateDescriptorHeap(&description, __uuidof(heap), heap.put_void()); FAILED(result))
-        throw dx::dxgi_factory(fmt::format("failed to create a descriptor heap(s): {0:#x}"s, result));
-
-    return heap;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE
