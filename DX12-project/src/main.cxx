@@ -304,6 +304,21 @@ int main()
     auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), swapchain_buffer_count);
     auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), 1);
 
+    D3D12_VIEWPORT const viewport{
+        0, 0,
+        static_cast<float>(extent.width), static_cast<float>(extent.height),
+        0, 1
+    };
+
+    command_list->RSSetViewports(1, &viewport);
+
+    D3D12_RECT scissor{
+        0, 0,
+        extent.width, extent.height
+    };
+
+    command_list->RSSetScissorRects(1, &scissor);
+
     window.update([]
     {
         ;

@@ -149,6 +149,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\graphics\command.hxx" />
+    <ClInclude Include="src\graphics\descriptor.hxx" />
     <ClInclude Include="src\main.hxx" />
     <ClInclude Include="src\platform\window.hxx" />
     <ClInclude Include="src\utility\exception.hxx" />
