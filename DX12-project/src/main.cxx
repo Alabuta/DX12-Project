@@ -179,7 +179,8 @@ create_swapchain_rtvs(ID3D12Device1 *const device, IDXGISwapChain *const swapcha
 }
 
 winrt::com_ptr<ID3D12Resource>
-create_depth_stencil_buffer(ID3D12Device1 *const device, graphics::extent extent, DXGI_FORMAT format)
+create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandList1 *const command_list,
+                            ID3D12DescriptorHeap *const descriptor_handle, graphics::extent extent, DXGI_FORMAT format)
 {
     auto [width, height] = extent;
 
@@ -215,6 +216,16 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, graphics::extent extent
     if (auto result = device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &description,
                                                       initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
+
+    auto buffer_view = depth_stencil_buffer_view(descriptor_handle);
+
+    device->CreateDepthStencilView(buffer.get(), nullptr, buffer_view);
+    
+    auto barriers = std::array{
+        CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
+    };
+
+    command_list->ResourceBarrier(std::size(barriers), std::data(barriers));
 
     return buffer;
 }
