@@ -16,6 +16,27 @@ namespace graphics
     };
 }
 
+namespace app
+{
+    struct D3D final {
+        winrt::com_ptr<IDXGIFactory4> dxgi_factory;
+
+        winrt::com_ptr<IDXGIAdapter1> hardware_adapter;
+        winrt::com_ptr<ID3D12Device1> device;
+
+        winrt::com_ptr<IDXGISwapChain> swapchain;
+
+        winrt::com_ptr<ID3D12GraphicsCommandList1> command_list;
+        winrt::com_ptr<ID3D12CommandAllocator> command_allocator;
+        winrt::com_ptr<ID3D12CommandQueue> command_queue;
+
+        winrt::com_ptr<ID3D12Fence> fence;
+
+        winrt::com_ptr<ID3D12DescriptorHeap> rtv_descriptor_heaps;
+        winrt::com_ptr<ID3D12DescriptorHeap> dsv_descriptor_heap;
+    };
+}
+
 
 winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_factory)
 {
@@ -225,23 +246,14 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
     };
 
-    command_list->ResourceBarrier(std::size(barriers), std::data(barriers));
+    command_list->ResourceBarrier(static_cast<UINT>(std::size(barriers)), std::data(barriers));
 
     return buffer;
 }
 
-
-
-int main()
+app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 {
-    if (auto result = glfwInit(); result != GLFW_TRUE)
-        throw std::runtime_error(fmt::format("failed to init GLFW: {0:#x}\n"s, result));
-
-    graphics::extent extent{800, 600};
-
 #if defined(_DEBUG) || defined(DEBUG)
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-
     {
         winrt::com_ptr<ID3D12Debug3> debug_controller;
 
@@ -295,8 +307,6 @@ int main()
 
     command_list->Close();
 
-    platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
-
     auto constexpr swapchain_buffer_count = 3u;
 
     auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format, swapchain_buffer_count);
@@ -304,41 +314,83 @@ int main()
     auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), swapchain_buffer_count);
     auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), 1);
 
+    return app::D3D{
+        dxgi_factory,
+
+        hardware_adapter,
+        device,
+
+        swapchain,
+
+        command_list,
+        command_allocator,
+        command_queue,
+
+        fence,
+
+        rtv_descriptor_heaps,
+        dsv_descriptor_heap
+    };
+}
+
+void cleanup_d3d(app::D3D &d3d)
+{
+    d3d.dsv_descriptor_heap = nullptr;
+    d3d.rtv_descriptor_heaps = nullptr;
+
+    d3d.swapchain = nullptr;
+
+    d3d.command_list = nullptr;
+    d3d.command_allocator = nullptr;
+    d3d.command_queue = nullptr;
+
+    d3d.fence = nullptr;
+
+    d3d.device = nullptr;
+    d3d.hardware_adapter = nullptr;
+
+    d3d.dxgi_factory = nullptr;
+}
+
+
+int main()
+{
+    if (auto result = glfwInit(); result != GLFW_TRUE)
+        throw std::runtime_error(fmt::format("failed to init GLFW: {0:#x}\n"s, result));
+
+#if defined(_DEBUG) || defined(DEBUG)
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
+
+    graphics::extent extent{800, 600};
+
+    platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
+
+    auto d3d = init_D3D(extent, window);
+
+#if 0
     D3D12_VIEWPORT const viewport{
         0, 0,
         static_cast<float>(extent.width), static_cast<float>(extent.height),
         0, 1
     };
 
-    command_list->RSSetViewports(1, &viewport);
+    d3d.command_list->RSSetViewports(1, &viewport);
 
     D3D12_RECT scissor{
         0, 0,
         extent.width, extent.height
     };
 
-    command_list->RSSetScissorRects(1, &scissor);
+    d3d.command_list->RSSetScissorRects(1, &scissor);
+#endif
 
     window.update([]
     {
         ;
     });
 
-    dsv_descriptor_heap = nullptr;
-    rtv_descriptor_heaps = nullptr;
-
-    swapchain = nullptr;
-
-    command_list = nullptr;
-    command_allocator = nullptr;
-    command_queue = nullptr;
-
-    fence = nullptr;
-
-    device = nullptr;
-    hardware_adapter = nullptr;
-
-    dxgi_factory = nullptr;
+    cleanup_d3d(d3d);
 
     glfwTerminate();
 }
