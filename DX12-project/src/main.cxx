@@ -26,6 +26,8 @@ namespace app
 
         winrt::com_ptr<IDXGISwapChain> swapchain;
 
+        winrt::com_ptr<ID3D12Resource> x;
+
         winrt::com_ptr<ID3D12GraphicsCommandList1> command_list;
         winrt::com_ptr<ID3D12CommandAllocator> command_allocator;
         winrt::com_ptr<ID3D12CommandQueue> command_queue;
@@ -241,7 +243,7 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
     auto buffer_view = depth_stencil_buffer_view(descriptor_handle);
 
     device->CreateDepthStencilView(buffer.get(), nullptr, buffer_view);
-    
+
     auto barriers = std::array{
         CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
     };
@@ -333,7 +335,7 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
     };
 }
 
-void cleanup_d3d(app::D3D &d3d)
+void cleanup_D3D(app::D3D &d3d)
 {
     d3d.dsv_descriptor_heap = nullptr;
     d3d.rtv_descriptor_heaps = nullptr;
@@ -350,6 +352,25 @@ void cleanup_d3d(app::D3D &d3d)
     d3d.hardware_adapter = nullptr;
 
     d3d.dxgi_factory = nullptr;
+}
+
+void draw(app::D3D &d3d)
+{
+    if (auto result = d3d.command_allocator->Reset(); FAILED(result))
+        throw dx::dxgi_factory(fmt::format("failed to reset a command allocator: {0:#x}"s, result));
+
+    if (auto result = d3d.command_list->Reset(d3d.command_allocator.get(), nullptr); FAILED(result))
+        throw dx::dxgi_factory(fmt::format("failed to reset a command list: {0:#x}"s, result));
+
+    auto back_buffer_index = 0u;
+
+    current_back_buffer_view(d3d.rtv_descriptor_heaps.get(), back_buffer_index, );
+
+    auto barriers = std::array{
+        CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)
+    };
+
+    d3d.command_list->ResourceBarrier(static_cast<UINT>(std::size(barriers)), std::data(barriers));
 }
 
 
@@ -390,7 +411,7 @@ int main()
         ;
     });
 
-    cleanup_d3d(d3d);
+    cleanup_D3D(d3d);
 
     glfwTerminate();
 }
