@@ -18,6 +18,8 @@ namespace graphics
 
 namespace app
 {
+    auto constexpr kSWAPCHAIN_BUFFER_COUNT = 3u;
+
     struct D3D final {
         winrt::com_ptr<IDXGIFactory4> dxgi_factory;
 
@@ -26,7 +28,8 @@ namespace app
 
         winrt::com_ptr<IDXGISwapChain> swapchain;
 
-        winrt::com_ptr<ID3D12Resource> x;
+        std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffers;
+        winrt::com_ptr<ID3D12Resource> depth_stencil_buffer;
 
         winrt::com_ptr<ID3D12GraphicsCommandList1> command_list;
         winrt::com_ptr<ID3D12CommandAllocator> command_allocator;
@@ -177,14 +180,14 @@ depth_stencil_buffer_view(ID3D12DescriptorHeap *const depth_stencil_buffer)
 }
 
 std::vector<winrt::com_ptr<ID3D12Resource>>
-create_swapchain_rtvs(ID3D12Device1 *const device, IDXGISwapChain *const swapchain, std::uint32_t swapchain_buffer_count,
+create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swapchain, std::uint32_t swapchain_buffer_count,
                       ID3D12DescriptorHeap *const rtv_descriptor_heap, std::uint32_t descriptor_byte_size)
 {
-    std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffer(swapchain_buffer_count);
+    std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffers(swapchain_buffer_count);
 
     auto rtv_heap_handle = static_cast<CD3DX12_CPU_DESCRIPTOR_HANDLE>(rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
 
-    std::generate(std::begin(swapchain_buffer), std::end(swapchain_buffer), [&, i = 0u] () mutable
+    std::generate(std::begin(swapchain_buffers), std::end(swapchain_buffers), [&, i = 0u] () mutable
     {
         winrt::com_ptr<ID3D12Resource> buffer;
 
@@ -198,7 +201,7 @@ create_swapchain_rtvs(ID3D12Device1 *const device, IDXGISwapChain *const swapcha
         return buffer;
     });
 
-    return swapchain_buffer;
+    return swapchain_buffers;
 }
 
 winrt::com_ptr<ID3D12Resource>
@@ -309,12 +312,16 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 
     command_list->Close();
 
-    auto constexpr swapchain_buffer_count = 3u;
+    auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format, app::kSWAPCHAIN_BUFFER_COUNT);
 
-    auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format, swapchain_buffer_count);
-
-    auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), swapchain_buffer_count);
+    auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), app::kSWAPCHAIN_BUFFER_COUNT);
     auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), 1);
+
+    auto swapchain_buffers = create_swapchain_buffers(device.get(), swapchain.get(), app::kSWAPCHAIN_BUFFER_COUNT,
+                                                      rtv_descriptor_heaps.get(), RTV_heap_size);
+
+    auto depth_stencil_buffer = create_depth_stencil_buffer(device.get(), command_list.get(), dsv_descriptor_heap.get(),
+                                                            extent, DXGI_FORMAT::DXGI_FORMAT_D24_UNORM_S8_UINT);
 
     return app::D3D{
         dxgi_factory,
@@ -323,6 +330,8 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
         device,
 
         swapchain,
+        swapchain_buffers,
+        depth_stencil_buffer,
 
         command_list,
         command_allocator,
@@ -354,7 +363,7 @@ void cleanup_D3D(app::D3D &d3d)
     d3d.dxgi_factory = nullptr;
 }
 
-void draw(app::D3D &d3d)
+void draw(app::D3D &d3d, graphics::extent extent)
 {
     if (auto result = d3d.command_allocator->Reset(); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to reset a command allocator: {0:#x}"s, result));
@@ -364,13 +373,30 @@ void draw(app::D3D &d3d)
 
     auto back_buffer_index = 0u;
 
-    current_back_buffer_view(d3d.rtv_descriptor_heaps.get(), back_buffer_index, );
+    auto current_back_buffer = d3d.swapchain_buffers.at(back_buffer_index);
+
+    //current_back_buffer_view(d3d.rtv_descriptor_heaps.get(), back_buffer_index, );
 
     auto barriers = std::array{
-        CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)
+        CD3DX12_RESOURCE_BARRIER::Transition(current_back_buffer.get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)
     };
 
     d3d.command_list->ResourceBarrier(static_cast<UINT>(std::size(barriers)), std::data(barriers));
+
+    D3D12_VIEWPORT const viewport{
+        0, 0,
+        static_cast<float>(extent.width), static_cast<float>(extent.height),
+        0, 1
+    };
+
+    d3d.command_list->RSSetViewports(1, &viewport);
+
+    D3D12_RECT scissor{
+        0, 0,
+        static_cast<LONG>(extent.width), static_cast<LONG>(extent.height)
+    };
+
+    d3d.command_list->RSSetScissorRects(1, &scissor);
 }
 
 
@@ -388,23 +414,6 @@ int main()
     platform::window window{"DX12 Project"sv, static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height)};
 
     auto d3d = init_D3D(extent, window);
-
-#if 0
-    D3D12_VIEWPORT const viewport{
-        0, 0,
-        static_cast<float>(extent.width), static_cast<float>(extent.height),
-        0, 1
-    };
-
-    d3d.command_list->RSSetViewports(1, &viewport);
-
-    D3D12_RECT scissor{
-        0, 0,
-        extent.width, extent.height
-    };
-
-    d3d.command_list->RSSetScissorRects(1, &scissor);
-#endif
 
     window.update([]
     {
