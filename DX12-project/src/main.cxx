@@ -219,18 +219,22 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         format,
         DXGI_SAMPLE_DESC{1, 0},
         D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE
     };
 
-    D3D12_HEAP_PROPERTIES const heap_properties{
+    /*D3D12_HEAP_PROPERTIES const heap_properties{
         D3D12_HEAP_TYPE_DEFAULT,
         D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE,
         D3D12_MEMORY_POOL_L1,
         1,
         1
-    };
+    };*/
 
-    auto constexpr initial_state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
+    //auto constexpr initial_state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    //auto constexpr initial_state = D3D12_RESOURCE_STATE_COMMON;
+    auto constexpr initial_state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
     D3D12_CLEAR_VALUE const clear_value{
         .Format = format,
@@ -243,9 +247,17 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
                                                       initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
 
-    auto buffer_view = depth_stencil_buffer_view(descriptor_handle);
+    //auto buffer_view = depth_stencil_buffer_view(descriptor_handle);
 
-    device->CreateDepthStencilView(buffer.get(), nullptr, buffer_view);
+    D3D12_DEPTH_STENCIL_VIEW_DESC const view_description{
+        .Format = format,
+        .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
+        .Flags = D3D12_DSV_FLAG_NONE,
+        .Texture2D = D3D12_TEX2D_DSV{0}
+    };
+
+    //device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, buffer_view);
+    device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, descriptor_handle->GetCPUDescriptorHandleForHeapStart());
 
     auto barriers = std::array{
         CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
