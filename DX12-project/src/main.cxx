@@ -206,11 +206,11 @@ create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swap
 
 winrt::com_ptr<ID3D12Resource>
 create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandList1 *const command_list,
-                            ID3D12DescriptorHeap *const descriptor_handle, graphics::extent extent, DXGI_FORMAT format)
+                            ID3D12DescriptorHeap *const descriptor_heap, graphics::extent extent, DXGI_FORMAT format)
 {
     auto [width, height] = extent;
 
-    D3D12_RESOURCE_DESC const description{
+    /*D3D12_RESOURCE_DESC const description{
         D3D12_RESOURCE_DIMENSION_TEXTURE2D,
         0,
         width, height,
@@ -220,7 +220,9 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         DXGI_SAMPLE_DESC{1, 0},
         D3D12_TEXTURE_LAYOUT_UNKNOWN,
         D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE
-    };
+    };*/
+
+    auto description = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
     /*D3D12_HEAP_PROPERTIES const heap_properties{
         D3D12_HEAP_TYPE_DEFAULT,
@@ -247,7 +249,7 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
                                                       initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
 
-    //auto buffer_view = depth_stencil_buffer_view(descriptor_handle);
+    auto buffer_view = depth_stencil_buffer_view(descriptor_heap);
 
     D3D12_DEPTH_STENCIL_VIEW_DESC const view_description{
         .Format = format,
@@ -256,8 +258,15 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         .Texture2D = D3D12_TEX2D_DSV{0}
     };
 
-    //device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, buffer_view);
-    device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, descriptor_handle->GetCPUDescriptorHandleForHeapStart());
+    try {
+        auto x = buffer.get();
+        auto y = &view_description;
+        auto z = buffer_view;
+        device->CreateDepthStencilView(x, y, z);
+    } catch (std::exception const &ex) {
+        std::cout << ex.what() << std::endl;
+    }
+    //device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, descriptor_handle->GetCPUDescriptorHandleForHeapStart());
 
     auto barriers = std::array{
         CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
@@ -333,7 +342,7 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
                                                       rtv_descriptor_heaps.get(), RTV_heap_size);
 
     auto depth_stencil_buffer = create_depth_stencil_buffer(device.get(), command_list.get(), dsv_descriptor_heap.get(),
-                                                            extent, DXGI_FORMAT::DXGI_FORMAT_D24_UNORM_S8_UINT);
+                                                            extent, DXGI_FORMAT::DXGI_FORMAT_D32_FLOAT);
 
     return app::D3D{
         dxgi_factory,
