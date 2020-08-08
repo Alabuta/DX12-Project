@@ -75,7 +75,7 @@ winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_fa
         if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
             return true;
 
-        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr); FAILED(result))
+        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_1, _uuidof(ID3D12Device), nullptr); FAILED(result))
             return true;
 
         return description.DedicatedVideoMemory == 0;
@@ -110,15 +110,13 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapte
 {
     winrt::com_ptr<ID3D12Device1> device;
 
-    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_11_0, __uuidof(device), device.put_void()); FAILED(result))
+    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_12_1, __uuidof(device), device.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
 
     {
         auto const requested_feature_levels = std::array{
             D3D_FEATURE_LEVEL_12_1,
-            D3D_FEATURE_LEVEL_12_0,
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0
+            D3D_FEATURE_LEVEL_12_0
         };
 
         D3D12_FEATURE_DATA_FEATURE_LEVELS feature_levels{
@@ -258,14 +256,14 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         .Texture2D = D3D12_TEX2D_DSV{0}
     };
 
-    try {
+    /*try {
         auto x = buffer.get();
         auto y = &view_description;
         auto z = buffer_view;
         device->CreateDepthStencilView(x, y, z);
     } catch (std::exception const &ex) {
         std::cout << ex.what() << std::endl;
-    }
+    }*/
     //device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, descriptor_handle->GetCPUDescriptorHandleForHeapStart());
 
     auto barriers = std::array{
