@@ -208,7 +208,8 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
 {
     auto [width, height] = extent;
 
-    /*D3D12_RESOURCE_DESC const description{
+#if 1
+    D3D12_RESOURCE_DESC const description{
         D3D12_RESOURCE_DIMENSION_TEXTURE2D,
         0,
         width, height,
@@ -217,10 +218,11 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         format,
         DXGI_SAMPLE_DESC{1, 0},
         D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE
-    };*/
-
+        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL /*| D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE*/
+    };
+#else
     auto description = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+#endif
 
     /*D3D12_HEAP_PROPERTIES const heap_properties{
         D3D12_HEAP_TYPE_DEFAULT,
@@ -230,20 +232,18 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
         1
     };*/
 
-    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-
     //auto constexpr initial_state = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    //auto constexpr initial_state = D3D12_RESOURCE_STATE_COMMON;
-    auto constexpr initial_state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    auto constexpr initial_state = D3D12_RESOURCE_STATE_COMMON;
+    //auto constexpr initial_state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
     D3D12_CLEAR_VALUE const clear_value{
         .Format = format,
-        .DepthStencil = D3D12_DEPTH_STENCIL_VALUE{ 1.f, 0 }
+        .DepthStencil = D3D12_DEPTH_STENCIL_VALUE{1.f, 0}
     };
 
     winrt::com_ptr<ID3D12Resource> buffer;
 
-    if (auto result = device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &description,
+    if (auto result = device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES{D3D12_HEAP_TYPE_DEFAULT}, D3D12_HEAP_FLAG_NONE, &description,
                                                       initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
 
