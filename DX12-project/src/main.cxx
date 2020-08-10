@@ -203,9 +203,15 @@ create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swap
 }
 
 winrt::com_ptr<ID3D12Resource>
-create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandList1 *const command_list,
-                            ID3D12DescriptorHeap *const descriptor_heap, graphics::extent extent, DXGI_FORMAT format)
+create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12CommandAllocator *const command_allocator, ID3D12GraphicsCommandList1 *const command_list,
+                            ID3D12CommandQueue *const command_queue, ID3D12DescriptorHeap *const descriptor_heap, graphics::extent extent, DXGI_FORMAT format)
 {
+    if (auto result = command_allocator->Reset(); FAILED(result))
+        throw dx::swapchain(fmt::format("failed to reset command allocator: {0:#x}"s, result));
+
+    if (auto result = command_list->Reset(command_allocator, nullptr); FAILED(result))
+        throw dx::swapchain(fmt::format("failed to reset command list: {0:#x}"s, result));
+
     auto [width, height] = extent;
 
 #if 1
@@ -247,14 +253,14 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
                                                       initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
 
-    auto buffer_view = depth_stencil_buffer_view(descriptor_heap);
-
     D3D12_DEPTH_STENCIL_VIEW_DESC const view_description{
         .Format = format,
         .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
         .Flags = D3D12_DSV_FLAG_NONE,
-        .Texture2D = D3D12_TEX2D_DSV{0}
+        .Texture2D = D3D12_TEX2D_DSV{ .MipSlice = 0 }
     };
+
+    auto buffer_view = depth_stencil_buffer_view(descriptor_heap);
 
     /*try {
         auto x = buffer.get();
@@ -264,15 +270,39 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12GraphicsCommandLi
     } catch (std::exception const &ex) {
         std::cout << ex.what() << std::endl;
     }*/
-    //device->CreateDepthStencilView(buffer.get(), nullptr/*&view_description*/, descriptor_handle->GetCPUDescriptorHandleForHeapStart());
+    device->CreateDepthStencilView(buffer.get(), &view_description, buffer_view);
 
     auto barriers = std::array{
         CD3DX12_RESOURCE_BARRIER::Transition(buffer.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE)
     };
 
     command_list->ResourceBarrier(static_cast<UINT>(std::size(barriers)), std::data(barriers));
+    command_list->Close();
+
+    std::array<ID3D12CommandList *, 1> command_lists{command_list};
+
+    command_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), std::data(command_lists));
 
     return buffer;
+}
+
+void flush_command_queue(ID3D12CommandQueue *const command_queue, ID3D12Fence *const fence)
+{
+    static UINT64 current_fence = 0;
+
+    if (auto result = command_queue->Signal(fence, ++current_fence); FAILED(result))
+        throw dx::swapchain(fmt::format("failed to update a fence: {0:#x}"s, result));
+
+    if (fence->GetCompletedValue() < current_fence) {
+        auto event_handle = CreateEventEx(nullptr, nullptr, 0, EVENT_ALL_ACCESS);
+
+        if (auto result = fence->SetEventOnCompletion(current_fence, event_handle); FAILED(result))
+            throw dx::swapchain(fmt::format("failed to specify a fence signaled event: {0:#x}"s, result));
+
+        WaitForSingleObject(event_handle, INFINITE);
+
+        CloseHandle(event_handle);
+    }
 }
 
 app::D3D init_D3D(graphics::extent extent, platform::window const &window)
@@ -333,14 +363,16 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 
     auto swapchain = create_swapchain(dxgi_factory.get(), command_queue.get(), window, extent, back_buffer_format, app::kSWAPCHAIN_BUFFER_COUNT);
 
-    auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), app::kSWAPCHAIN_BUFFER_COUNT);
-    auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), 1);
+    auto rtv_descriptor_heaps = create_descriptor_heaps(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV, app::kSWAPCHAIN_BUFFER_COUNT);
+    auto dsv_descriptor_heap = create_descriptor_heaps(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
 
     auto swapchain_buffers = create_swapchain_buffers(device.get(), swapchain.get(), app::kSWAPCHAIN_BUFFER_COUNT,
                                                       rtv_descriptor_heaps.get(), RTV_heap_size);
 
-    auto depth_stencil_buffer = create_depth_stencil_buffer(device.get(), command_list.get(), dsv_descriptor_heap.get(),
-                                                            extent, DXGI_FORMAT::DXGI_FORMAT_D32_FLOAT);
+    auto depth_stencil_buffer = create_depth_stencil_buffer(device.get(), command_allocator.get(), command_list.get(), command_queue.get(),
+                                                            dsv_descriptor_heap.get(), extent, DXGI_FORMAT::DXGI_FORMAT_D32_FLOAT);
+
+    flush_command_queue(command_queue.get(), fence.get());
 
     return app::D3D{
         dxgi_factory,

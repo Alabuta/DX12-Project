@@ -5,10 +5,10 @@
 
 
 winrt::com_ptr<ID3D12DescriptorHeap>
-create_descriptor_heaps(ID3D12Device1 *const device, std::uint32_t number)
+create_descriptor_heaps(ID3D12Device1 *const device, D3D12_DESCRIPTOR_HEAP_TYPE type, std::uint32_t number)
 {
     D3D12_DESCRIPTOR_HEAP_DESC description{
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+        type,
         number,
         D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
         0
