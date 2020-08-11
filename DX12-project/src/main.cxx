@@ -14,16 +14,24 @@ namespace graphics
     struct extent final {
         std::uint32_t width{0}, height{0};
     };
+
+    DXGI_FORMAT constexpr kDEPTH_FORMAT{DXGI_FORMAT::DXGI_FORMAT_D32_FLOAT};
 }
 
 namespace app
 {
+#if defined(_DEBUG) || defined(DEBUG)
+    auto constexpr kDEBUG_D3D{true};
+#else
+    auto constexpr kDEBUG_D3D{false};
+#endif
+
     auto constexpr kSWAPCHAIN_BUFFER_COUNT = 3u;
 
     struct D3D final {
-        winrt::com_ptr<IDXGIFactory4> dxgi_factory;
+        winrt::com_ptr<IDXGIFactory7> dxgi_factory;
 
-        winrt::com_ptr<IDXGIAdapter1> hardware_adapter;
+        winrt::com_ptr<IDXGIAdapter4> hardware_adapter;
         winrt::com_ptr<ID3D12Device1> device;
 
         winrt::com_ptr<IDXGISwapChain> swapchain;
@@ -43,13 +51,13 @@ namespace app
 }
 
 
-winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_factory)
+winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_factory)
 {
-    std::vector<winrt::com_ptr<IDXGIAdapter1>> adapters(16);
+    std::vector<winrt::com_ptr<IDXGIAdapter4>> adapters(16);
 
     std::generate(std::begin(adapters), std::end(adapters), [dxgi_factory, i = 0u] () mutable
     {
-        winrt::com_ptr<IDXGIAdapter1> adapter;
+        winrt::com_ptr<IDXGIAdapter4> adapter; 
 
         dxgi_factory->EnumAdapters1(i++, adapter.put());
 
@@ -106,7 +114,7 @@ winrt::com_ptr<IDXGIAdapter1> pick_hardware_adapter(IDXGIFactory4 *const dxgi_fa
     return adapters.front();
 }
 
-winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapter)
+winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter4 *const hardware_adapter)
 {
     winrt::com_ptr<ID3D12Device1> device;
 
@@ -131,7 +139,7 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter1 *const hardware_adapte
 }
 
 winrt::com_ptr<IDXGISwapChain>
-create_swapchain(IDXGIFactory4 *const factory, ID3D12CommandQueue *const queue, platform::window const &window,
+create_swapchain(IDXGIFactory7 *const factory, ID3D12CommandQueue *const queue, platform::window const &window,
                  graphics::extent extent, DXGI_FORMAT format, std::uint32_t swapchain_buffer_count)
 {
     auto [width, height] = extent;
@@ -307,8 +315,7 @@ void flush_command_queue(ID3D12CommandQueue *const command_queue, ID3D12Fence *c
 
 app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 {
-#if defined(_DEBUG) || defined(DEBUG)
-    {
+    if constexpr (app::kDEBUG_D3D) {
         winrt::com_ptr<ID3D12Debug3> debug_controller;
 
         if (auto result = D3D12GetDebugInterface(__uuidof(debug_controller), debug_controller.put_void()); FAILED(result))
@@ -316,12 +323,19 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 
         debug_controller->EnableDebugLayer();
     }
-#endif
 
-    winrt::com_ptr<IDXGIFactory4> dxgi_factory;
+    winrt::com_ptr<IDXGIFactory7> dxgi_factory;
 
-    if (auto result = CreateDXGIFactory1(__uuidof(dxgi_factory), dxgi_factory.put_void()); FAILED(result))
-        throw dx::dxgi_factory(fmt::format("failed to create DXGI factory instance: {0:#x}"s, result));
+    {
+        UINT flags = 0;
+
+        if constexpr (app::kDEBUG_D3D)
+            flags = DXGI_CREATE_FACTORY_DEBUG;
+
+        //if (auto result = CreateDXGIFactory2(flags, IID_IDXGIFactory7, dxgi_factory.put_void()); FAILED(result))
+        if (auto result = CreateDXGIFactory2(flags, __uuidof(dxgi_factory), dxgi_factory.put_void()); FAILED(result))
+            throw dx::dxgi_factory(fmt::format("failed to create DXGI factory instance: {0:#x}"s, result));
+    }
 
     auto hardware_adapter = pick_hardware_adapter(dxgi_factory.get());
 
@@ -370,7 +384,7 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
                                                       rtv_descriptor_heaps.get(), RTV_heap_size);
 
     auto depth_stencil_buffer = create_depth_stencil_buffer(device.get(), command_allocator.get(), command_list.get(), command_queue.get(),
-                                                            dsv_descriptor_heap.get(), extent, DXGI_FORMAT::DXGI_FORMAT_D32_FLOAT);
+                                                            dsv_descriptor_heap.get(), extent, graphics::kDEPTH_FORMAT);
 
     flush_command_queue(command_queue.get(), fence.get());
 

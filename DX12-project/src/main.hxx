@@ -21,7 +21,7 @@ using namespace std::string_view_literals;
 
 #include <fmt/format.h>
 
-#include <dxgi1_5.h>
+#include <dxgi1_6.h>
 #include <d3d12.h>
 #include <DX12/d3dx12.h>
 
