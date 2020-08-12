@@ -53,11 +53,11 @@ namespace app
 
 winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_factory)
 {
-    std::vector<winrt::com_ptr<IDXGIAdapter4>> adapters(16);
+    std::vector<winrt::com_ptr<IDXGIAdapter1>> adapters(16);
 
     std::generate(std::begin(adapters), std::end(adapters), [dxgi_factory, i = 0u] () mutable
     {
-        winrt::com_ptr<IDXGIAdapter4> adapter; 
+        winrt::com_ptr<IDXGIAdapter1> adapter;
 
         dxgi_factory->EnumAdapters1(i++, adapter.put());
 
@@ -83,7 +83,7 @@ winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_fa
         if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
             return true;
 
-        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_1, _uuidof(ID3D12Device), nullptr); FAILED(result))
+        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_1, __uuidof(ID3D12Device), nullptr); FAILED(result))
             return true;
 
         return description.DedicatedVideoMemory == 0;
@@ -111,7 +111,9 @@ winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_fa
     if (adapters.empty())
         throw dx::dxgi_factory("failed to pick hardware adapter"s);
 
-    return adapters.front();
+    winrt::com_ptr<IDXGIAdapter4> adapter{adapters.front().as<IDXGIAdapter4>()};
+
+    return adapter;
 }
 
 winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter4 *const hardware_adapter)
@@ -123,8 +125,7 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter4 *const hardware_adapte
 
     {
         auto const requested_feature_levels = std::array{
-            D3D_FEATURE_LEVEL_12_1,
-            D3D_FEATURE_LEVEL_12_0
+            D3D_FEATURE_LEVEL_12_1
         };
 
         D3D12_FEATURE_DATA_FEATURE_LEVELS feature_levels{
