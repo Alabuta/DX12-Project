@@ -7,6 +7,8 @@
 
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "D3D12.lib")
+#pragma comment(lib, "RuntimeObject.lib")
+//#pragma comment(lib, "ComBase.lib")
 
 
 namespace graphics
@@ -32,18 +34,18 @@ namespace app
         winrt::com_ptr<IDXGIFactory7> dxgi_factory;
 
         winrt::com_ptr<IDXGIAdapter4> hardware_adapter;
-        winrt::com_ptr<ID3D12Device1> device;
+        winrt::com_ptr<ID3D12Device6> device;
 
-        winrt::com_ptr<IDXGISwapChain> swapchain;
+        winrt::com_ptr<IDXGISwapChain4> swapchain;
 
         std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffers;
         winrt::com_ptr<ID3D12Resource> depth_stencil_buffer;
 
-        winrt::com_ptr<ID3D12GraphicsCommandList1> command_list;
+        winrt::com_ptr<ID3D12GraphicsCommandList5> command_list;
         winrt::com_ptr<ID3D12CommandAllocator> command_allocator;
         winrt::com_ptr<ID3D12CommandQueue> command_queue;
 
-        winrt::com_ptr<ID3D12Fence> fence;
+        winrt::com_ptr<ID3D12Fence1> fence;
 
         winrt::com_ptr<ID3D12DescriptorHeap> rtv_descriptor_heaps;
         winrt::com_ptr<ID3D12DescriptorHeap> dsv_descriptor_heap;
@@ -83,7 +85,7 @@ winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_fa
         if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
             return true;
 
-        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_1, __uuidof(ID3D12Device), nullptr); FAILED(result))
+        if (auto result = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_1, winrt::guid_of<ID3D12Device6>(), nullptr); FAILED(result))
             return true;
 
         return description.DedicatedVideoMemory == 0;
@@ -111,16 +113,17 @@ winrt::com_ptr<IDXGIAdapter4> pick_hardware_adapter(IDXGIFactory7 *const dxgi_fa
     if (adapters.empty())
         throw dx::dxgi_factory("failed to pick hardware adapter"s);
 
-    winrt::com_ptr<IDXGIAdapter4> adapter{adapters.front().as<IDXGIAdapter4>()};
+    if (auto adapter = adapters.front().try_as<IDXGIAdapter4>(); adapter == nullptr)
+        throw dx::dxgi_factory("failed to query 'IDXGIAdapter4' interface from adapter"s);
 
-    return adapter;
+    else return adapter;
 }
 
-winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter4 *const hardware_adapter)
+winrt::com_ptr<ID3D12Device6> create_device(IDXGIAdapter4 *const hardware_adapter)
 {
-    winrt::com_ptr<ID3D12Device1> device;
+    winrt::com_ptr<ID3D12Device6> device;
 
-    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_12_1, __uuidof(device), device.put_void()); FAILED(result))
+    if (auto result = D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_12_1, winrt::guid_of<ID3D12Device6>(), device.put_void()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create logical device: {0:#x}"s, result));
 
     {
@@ -139,7 +142,7 @@ winrt::com_ptr<ID3D12Device1> create_device(IDXGIAdapter4 *const hardware_adapte
     return device;
 }
 
-winrt::com_ptr<IDXGISwapChain>
+winrt::com_ptr<IDXGISwapChain4>
 create_swapchain(IDXGIFactory7 *const factory, ID3D12CommandQueue *const queue, platform::window const &window,
                  graphics::extent extent, DXGI_FORMAT format, std::uint32_t swapchain_buffer_count)
 {
@@ -169,7 +172,10 @@ create_swapchain(IDXGIFactory7 *const factory, ID3D12CommandQueue *const queue, 
     if (auto result = factory->CreateSwapChain(queue, &description, swap_chain.put()); FAILED(result))
         throw dx::dxgi_factory(fmt::format("failed to create a swap chain: {0:#x}"s, result));
 
-    return swap_chain;
+    if (auto sc = swap_chain.try_as<IDXGISwapChain4>(); sc == nullptr)
+        throw dx::dxgi_factory("failed to query 'IDXGISwapChain4' interface from swap chain"s);
+
+    else return sc;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE
@@ -187,7 +193,7 @@ depth_stencil_buffer_view(ID3D12DescriptorHeap *const depth_stencil_buffer)
 }
 
 std::vector<winrt::com_ptr<ID3D12Resource>>
-create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swapchain, std::uint32_t swapchain_buffer_count,
+create_swapchain_buffers(ID3D12Device6 *const device, IDXGISwapChain4 *const swapchain, std::uint32_t swapchain_buffer_count,
                       ID3D12DescriptorHeap *const rtv_descriptor_heap, std::uint32_t descriptor_byte_size)
 {
     std::vector<winrt::com_ptr<ID3D12Resource>> swapchain_buffers(swapchain_buffer_count);
@@ -198,7 +204,7 @@ create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swap
     {
         winrt::com_ptr<ID3D12Resource> buffer;
 
-        if (auto result = swapchain->GetBuffer(i++, __uuidof(buffer), buffer.put_void()); FAILED(result))
+        if (auto result = swapchain->GetBuffer(i++, winrt::guid_of<ID3D12Resource>(), buffer.put_void()); FAILED(result))
             throw dx::swapchain(fmt::format("failed to get swapchain buffer: {0:#x}"s, result));
 
         device->CreateRenderTargetView(buffer.get(), nullptr, rtv_heap_handle);
@@ -212,7 +218,7 @@ create_swapchain_buffers(ID3D12Device1 *const device, IDXGISwapChain *const swap
 }
 
 winrt::com_ptr<ID3D12Resource>
-create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12CommandAllocator *const command_allocator, ID3D12GraphicsCommandList1 *const command_list,
+create_depth_stencil_buffer(ID3D12Device6 *const device, ID3D12CommandAllocator *const command_allocator, ID3D12GraphicsCommandList5 *const command_list,
                             ID3D12CommandQueue *const command_queue, ID3D12DescriptorHeap *const descriptor_heap, graphics::extent extent, DXGI_FORMAT format)
 {
     if (auto result = command_allocator->Reset(); FAILED(result))
@@ -259,7 +265,7 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12CommandAllocator 
     winrt::com_ptr<ID3D12Resource> buffer;
 
     if (auto result = device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES{D3D12_HEAP_TYPE_DEFAULT}, D3D12_HEAP_FLAG_NONE, &description,
-                                                      initial_state, &clear_value, __uuidof(buffer), buffer.put_void()); FAILED(result))
+                                                      initial_state, &clear_value, winrt::guid_of<ID3D12Resource>(), buffer.put_void()); FAILED(result))
         throw dx::swapchain(fmt::format("failed to create depth-stencil buffer: {0:#x}"s, result));
 
     D3D12_DEPTH_STENCIL_VIEW_DESC const view_description{
@@ -295,7 +301,7 @@ create_depth_stencil_buffer(ID3D12Device1 *const device, ID3D12CommandAllocator 
     return buffer;
 }
 
-void flush_command_queue(ID3D12CommandQueue *const command_queue, ID3D12Fence *const fence)
+void flush_command_queue(ID3D12CommandQueue *const command_queue, ID3D12Fence1 *const fence)
 {
     static UINT64 current_fence = 0;
 
@@ -319,7 +325,7 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
     if constexpr (app::kDEBUG_D3D) {
         winrt::com_ptr<ID3D12Debug3> debug_controller;
 
-        if (auto result = D3D12GetDebugInterface(__uuidof(debug_controller), debug_controller.put_void()); FAILED(result))
+        if (auto result = D3D12GetDebugInterface(winrt::guid_of<ID3D12Debug3>(), debug_controller.put_void()); FAILED(result))
             throw dx::com_exception("failed get debug interface {0:#x}"s);
 
         debug_controller->EnableDebugLayer();
@@ -334,7 +340,7 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
             flags = DXGI_CREATE_FACTORY_DEBUG;
 
         //if (auto result = CreateDXGIFactory2(flags, IID_IDXGIFactory7, dxgi_factory.put_void()); FAILED(result))
-        if (auto result = CreateDXGIFactory2(flags, __uuidof(dxgi_factory), dxgi_factory.put_void()); FAILED(result))
+        if (auto result = CreateDXGIFactory2(flags, winrt::guid_of<IDXGIFactory7>(), dxgi_factory.put_void()); FAILED(result))
             throw dx::dxgi_factory(fmt::format("failed to create DXGI factory instance: {0:#x}"s, result));
     }
 
@@ -342,9 +348,9 @@ app::D3D init_D3D(graphics::extent extent, platform::window const &window)
 
     auto device = create_device(hardware_adapter.get());
 
-    winrt::com_ptr<ID3D12Fence> fence;
+    winrt::com_ptr<ID3D12Fence1> fence;
 
-    if (auto result = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(fence), fence.put_void()); FAILED(result))
+    if (auto result = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, winrt::guid_of<ID3D12Fence1>(), fence.put_void()); FAILED(result))
         throw dx::device_error(fmt::format("failed to create a fence: {0:#x}"s, result));
 
     auto const RTV_heap_size = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
